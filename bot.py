@@ -9,12 +9,27 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
+# =========================
+# НАСТРОЙКИ
+# =========================
+
 TOKEN = os.getenv("BOT_TOKEN")
 CARD_NUMBER = os.getenv("CARD_NUMBER")
+
+if not TOKEN:
+    raise ValueError("Не найден BOT_TOKEN")
+
+if not CARD_NUMBER:
+    raise ValueError("Не найден CARD_NUMBER")
+
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+
+# =========================
+# ЦЕНЫ
+# =========================
 
 PRICES = {
     "100": 65,
@@ -25,52 +40,90 @@ PRICES = {
 }
 
 
+# =========================
+# СОЗДАНИЕ ID ЗАКАЗА
+# =========================
+
 def create_order_id():
     characters = string.ascii_uppercase + string.digits
     return "SF-" + "".join(random.choices(characters, k=6))
 
 
+# =========================
+# ГЛАВНОЕ МЕНЮ
+# =========================
+
 def main_menu():
     keyboard = InlineKeyboardBuilder()
 
-    keyboard.button(text="⭐ Купить Stars", callback_data="buy_stars")
-    keyboard.button(text="💰 Мои покупки", callback_data="my_orders")
-    keyboard.button(text="🎁 Промокод", callback_data="promo")
-    keyboard.button(text="💬 Поддержка", callback_data="support")
+    keyboard.button(
+        text="⭐ Купить Stars",
+        callback_data="buy_stars"
+    )
+
+    keyboard.button(
+        text="💰 Мои покупки",
+        callback_data="my_orders"
+    )
+
+    keyboard.button(
+        text="🎁 Промокод",
+        callback_data="promo"
+    )
+
+    keyboard.button(
+        text="💬 Поддержка",
+        callback_data="support"
+    )
 
     keyboard.adjust(1)
 
     return keyboard.as_markup()
 
 
+# =========================
+# START
+# =========================
+
 @dp.message(CommandStart())
 async def start(message: Message):
+
     await message.answer(
         "⭐ <b>StarFlow Shop</b>\n\n"
-        "Добро пожаловать!\n"
-        "Здесь ты можешь приобрести Telegram Stars.\n\n"
-        "Выбери нужный раздел:",
+        "Добро пожаловать в магазин Telegram Stars!\n\n"
+        "Здесь ты можешь быстро приобрести Stars.\n\n"
+        "👇 Выбери нужный раздел:",
         reply_markup=main_menu(),
         parse_mode="HTML"
     )
 
 
+# =========================
+# ПОКУПКА STARS
+# =========================
+
 @dp.callback_query(F.data == "buy_stars")
 async def buy_stars(callback: CallbackQuery):
+
     keyboard = InlineKeyboardBuilder()
 
     for stars, price in PRICES.items():
+
         keyboard.button(
             text=f"⭐ {stars} Stars — {price} грн",
             callback_data=f"stars_{stars}"
         )
 
-    keyboard.button(text="🔙 Назад", callback_data="back")
+    keyboard.button(
+        text="🔙 Назад",
+        callback_data="back"
+    )
+
     keyboard.adjust(1)
 
     await callback.message.edit_text(
         "⭐ <b>Покупка Stars</b>\n\n"
-        "Выбери нужный пакет:",
+        "Выбери необходимое количество:",
         reply_markup=keyboard.as_markup(),
         parse_mode="HTML"
     )
@@ -78,9 +131,22 @@ async def buy_stars(callback: CallbackQuery):
     await callback.answer()
 
 
+# =========================
+# ВЫБОР ПАКЕТА
+# =========================
+
 @dp.callback_query(F.data.startswith("stars_"))
 async def selected_stars(callback: CallbackQuery):
+
     stars = callback.data.replace("stars_", "")
+
+    if stars not in PRICES:
+        await callback.answer(
+            "❌ Такой пакет не найден",
+            show_alert=True
+        )
+        return
+
     price = PRICES[stars]
 
     username = callback.from_user.username
@@ -93,19 +159,35 @@ async def selected_stars(callback: CallbackQuery):
     order = create_order_id()
 
     text = (
-        "🏦 <b>Оплата на карту</b>\n\n"
-        f"💳 <b>Номер карты:</b> {CARD_NUMBER}\n"
-        f"💰 <b>К оплате:</b> {price} грн\n\n"
+        "🏦 <b>Оплата заказа</b>\n\n"
+
+        f"💳 <b>Номер карты:</b>\n"
+        f"<code>{CARD_NUMBER}</code>\n\n"
+
+        f"💰 <b>К оплате:</b> {price} грн\n"
         f"⭐ <b>Товар:</b> {stars} Stars\n"
         f"👤 <b>Telegram:</b> {telegram_user}\n\n"
-        f"🧾 <b>ID заказа:</b> <code>{order}</code>\n\n"
-        "• Оплату принимаем тольк от владельца аккаунта, оформляющего заказ.\n"
-        "• После оплаты отправьте скриншот чека в этот чат.\n\n"
-        "⏰ После отправки чека дождитесь проверки платежа и подтверждения заказа. ✅"
+
+        f"🧾 <b>ID заказа:</b>\n"
+        f"<code>{order}</code>\n\n"
+
+        "📌 <b>Важно:</b>\n"
+        "• Оплату принимаем только от владельца аккаунта, оформляющего заказ.\n"
+        "• После оплаты отправьте скриншот чека в этот чат.\n"
+        "• В комментарии к платежу укажите ID заказа.\n\n"
+
+        "⏰ После отправки чека дождитесь проверки платежа "
+        "и подтверждения заказа. ✅"
     )
 
     keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="🔙 Назад", callback_data="buy_stars")
+
+    keyboard.button(
+        text="🔙 Назад",
+        callback_data="buy_stars"
+    )
+
+    keyboard.adjust(1)
 
     await callback.message.edit_text(
         text,
@@ -116,13 +198,94 @@ async def selected_stars(callback: CallbackQuery):
     await callback.answer()
 
 
+# =========================
+# МОИ ПОКУПКИ
+# =========================
+
+@dp.callback_query(F.data == "my_orders")
+async def my_orders(callback: CallbackQuery):
+
+    keyboard = InlineKeyboardBuilder()
+
+    keyboard.button(
+        text="🔙 Назад",
+        callback_data="back"
+    )
+
+    await callback.message.edit_text(
+        "💰 <b>Мои покупки</b>\n\n"
+        "У тебя пока нет сохранённых заказов.\n\n"
+        "История покупок появится здесь после подключения базы данных.",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+# =========================
+# ПРОМОКОД
+# =========================
+
+@dp.callback_query(F.data == "promo")
+async def promo(callback: CallbackQuery):
+
+    keyboard = InlineKeyboardBuilder()
+
+    keyboard.button(
+        text="🔙 Назад",
+        callback_data="back"
+    )
+
+    await callback.message.edit_text(
+        "🎁 <b>Промокод</b>\n\n"
+        "Функция промокодов пока находится в разработке.\n\n"
+        "Следи за обновлениями StarFlow Shop ⭐",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+# =========================
+# ПОДДЕРЖКА
+# =========================
+
+@dp.callback_query(F.data == "support")
+async def support(callback: CallbackQuery):
+
+    keyboard = InlineKeyboardBuilder()
+
+    keyboard.button(
+        text="🔙 Назад",
+        callback_data="back"
+    )
+
+    await callback.message.edit_text(
+        "💬 <b>Поддержка</b>\n\n"
+        "Если у тебя возникла проблема с заказом,\n"
+        "подготовь ID заказа и напиши в поддержку.\n\n"
+        "⏰ Среднее время ответа — после проверки заказа.",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+# =========================
+# НАЗАД В ГЛАВНОЕ МЕНЮ
+# =========================
+
 @dp.callback_query(F.data == "back")
 async def back(callback: CallbackQuery):
+
     await callback.message.edit_text(
         "⭐ <b>StarFlow Shop</b>\n\n"
-        "Добро пожаловать!\n"
-        "Здесь ты можешь приобрести Telegram Stars.\n\n"
-        "Выбери нужный раздел:",
+        "Добро пожаловать в магазин Telegram Stars!\n\n"
+        "Здесь ты можешь быстро приобрести Stars.\n\n"
+        "👇 Выбери нужный раздел:",
         reply_markup=main_menu(),
         parse_mode="HTML"
     )
@@ -130,8 +293,16 @@ async def back(callback: CallbackQuery):
     await callback.answer()
 
 
+# =========================
+# ЗАПУСК БОТА
+# =========================
+
 async def main():
+
+    print("StarFlow Shop запущен!")
+
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
