@@ -665,7 +665,7 @@ async def support(callback: CallbackQuery):
     await callback.message.edit_text(
         "💬 <b>Поддержка</b>\n\n"
         "Если возникла проблема с заказом,\n"
-        "обратись к администратору: @Bevseev",
+        "обратись к администратору: @De2vex",
         reply_markup=keyboard.as_markup(),
         parse_mode="HTML"
     )
