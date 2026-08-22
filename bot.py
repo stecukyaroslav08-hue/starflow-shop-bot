@@ -18,7 +18,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 CARD_NUMBER = os.getenv("CARD_NUMBER")
 
 # Твой Telegram ID
-ADMIN_ID = 6924875134
+ADMIN_ID = 7206786301
 
 
 if not TOKEN:
