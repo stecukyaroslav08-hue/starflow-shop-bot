@@ -120,13 +120,3 @@ async def payment(callback: CallbackQuery):
         "💳 Систему оплаты подключим следующим шагом.",
         parse_mode="HTML"
     )
-
-    await callback.answer()
-
-
-async def main():
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
