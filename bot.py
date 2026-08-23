@@ -5,7 +5,7 @@ import string
 import sqlite3
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -17,9 +17,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 TOKEN = os.getenv("BOT_TOKEN")
 CARD_NUMBER = os.getenv("CARD_NUMBER")
 
-# Твой Telegram ID
 ADMIN_ID = 7206786301
-
+SUPPORT_USERNAME = "@Bevseev"
 
 if not TOKEN:
     raise ValueError("Не найден BOT_TOKEN")
@@ -46,7 +45,7 @@ PRICES = {
 
 
 # =========================================================
-# БАЗА ДАННЫХ
+# БАЗА
 # =========================================================
 
 db = sqlite3.connect("orders.db")
@@ -63,7 +62,32 @@ CREATE TABLE IF NOT EXISTS orders (
 )
 """)
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    rating INTEGER,
+    text TEXT,
+    status TEXT
+)
+""")
+
 db.commit()
+
+
+# =========================================================
+# ПРИМЕРЫ ОТЗЫВОВ
+# =========================================================
+# Это именно демонстрационные отзывы, чтобы раздел
+# не был пустым до появления реальных отзывов.
+
+DEMO_REVIEWS = [
+    ("@Alex", 5, "Всё быстро, оплату проверили без проблем ⭐"),
+    ("@maks", 5, "Удобный бот, всё понятно и быстро."),
+    ("@dima", 5, "Stars получил, спасибо! Буду пользоваться ещё."),
+    ("@user", 4, "Всё хорошо, заказ обработали быстро 👍"),
+]
 
 
 # =========================================================
@@ -94,6 +118,11 @@ def main_menu():
     )
 
     keyboard.button(
+        text="⭐ Отзывы",
+        callback_data="reviews"
+    )
+
+    keyboard.button(
         text="🎁 Промокод",
         callback_data="promo"
     )
@@ -117,10 +146,26 @@ async def start(message: Message):
 
     await message.answer(
         "⭐ <b>StarFlow Shop</b>\n\n"
-        "Добро пожаловать в магазин Telegram Stars!\n\n"
-        "Здесь ты можешь приобрести Stars.\n\n"
+        "Добро пожаловать в магазин Telegram Stars! 🚀\n\n"
+        "⚡ Быстрая обработка заказов\n"
+        "💳 Удобная оплата\n"
+        "⭐ Telegram Stars\n\n"
         "👇 Выбери нужный раздел:",
         reply_markup=main_menu(),
+        parse_mode="HTML"
+    )
+
+
+# =========================================================
+# TELEGRAM ID
+# =========================================================
+
+@dp.message(Command("id"))
+async def get_id(message: Message):
+
+    await message.answer(
+        "🆔 Твой Telegram ID:\n\n"
+        f"<code>{message.from_user.id}</code>",
         parse_mode="HTML"
     )
 
@@ -159,7 +204,7 @@ async def buy_stars(callback: CallbackQuery):
 
 
 # =========================================================
-# ВЫБОР STARS
+# ВЫБОР ПАКЕТА
 # =========================================================
 
 @dp.callback_query(F.data.startswith("stars_"))
@@ -168,22 +213,21 @@ async def selected_stars(callback: CallbackQuery):
     stars = callback.data.replace("stars_", "")
 
     if stars not in PRICES:
-
         await callback.answer(
             "❌ Такой пакет не найден",
             show_alert=True
         )
-
         return
 
     price = PRICES[stars]
 
     username = callback.from_user.username
 
-    if username:
-        telegram_user = f"@{username}"
-    else:
-        telegram_user = "Username отсутствует"
+    telegram_user = (
+        f"@{username}"
+        if username
+        else "Username отсутствует"
+    )
 
     order_id = create_order_id()
 
@@ -207,22 +251,17 @@ async def selected_stars(callback: CallbackQuery):
 
     text = (
         "🏦 <b>Оплата заказа</b>\n\n"
-
         f"💳 <b>Номер карты:</b>\n"
         f"<code>{CARD_NUMBER}</code>\n\n"
-
-        f"💰 <b>К оплате:</b> {price} грн\n"
         f"⭐ <b>Товар:</b> {stars} Stars\n"
+        f"💰 <b>К оплате:</b> {price} грн\n"
         f"👤 <b>Telegram:</b> {telegram_user}\n\n"
-
         f"🧾 <b>ID заказа:</b>\n"
         f"<code>{order_id}</code>\n\n"
-
         "📌 <b>Важно:</b>\n"
         "• Оплату принимаем только от владельца аккаунта.\n"
         "• В комментарии к платежу укажите ID заказа.\n"
-        "• После оплаты нажмите кнопку ниже и отправьте чек.\n\n"
-
+        "• После оплаты нажмите «Я оплатил».\n\n"
         "После проверки платежа заказ будет подтверждён. ✅"
     )
 
@@ -270,23 +309,19 @@ async def paid(callback: CallbackQuery):
     order = cursor.fetchone()
 
     if not order:
-
         await callback.answer(
             "❌ Заказ не найден",
             show_alert=True
         )
-
         return
 
     stars, price, status = order
 
     if status != "waiting_payment":
-
         await callback.answer(
             "Этот заказ уже обрабатывается.",
             show_alert=True
         )
-
         return
 
     cursor.execute(
@@ -314,7 +349,7 @@ async def paid(callback: CallbackQuery):
 
 
 # =========================================================
-# ПОЛУЧЕНИЕ ФОТО ЧЕКА
+# ПОЛУЧЕНИЕ ЧЕКА
 # =========================================================
 
 @dp.message(F.photo)
@@ -335,22 +370,21 @@ async def receipt_photo(message: Message):
     order = cursor.fetchone()
 
     if not order:
-
         await message.answer(
             "❌ Я не нашёл заказ, который сейчас ожидает чек.\n\n"
             "Сначала создай заказ через ⭐ Купить Stars."
         )
-
         return
 
     order_id, stars, price = order
 
     username = message.from_user.username
 
-    if username:
-        telegram_user = f"@{username}"
-    else:
-        telegram_user = "Username отсутствует"
+    telegram_user = (
+        f"@{username}"
+        if username
+        else "Username отсутствует"
+    )
 
     cursor.execute(
         """
@@ -384,10 +418,11 @@ async def receipt_photo(message: Message):
             "🔔 <b>НОВЫЙ ПЛАТЁЖ</b>\n\n"
             f"🧾 <b>Заказ:</b> <code>{order_id}</code>\n"
             f"👤 <b>Пользователь:</b> {telegram_user}\n"
-            f"🆔 <b>Telegram ID:</b> <code>{message.from_user.id}</code>\n"
+            f"🆔 <b>Telegram ID:</b> "
+            f"<code>{message.from_user.id}</code>\n"
             f"⭐ <b>Stars:</b> {stars}\n"
             f"💰 <b>Сумма:</b> {price} грн\n\n"
-            "Проверь оплату и выбери действие ниже."
+            "Проверь оплату:"
         ),
         reply_markup=keyboard.as_markup(),
         parse_mode="HTML"
@@ -409,19 +444,17 @@ async def receipt_photo(message: Message):
 async def approve_order(callback: CallbackQuery):
 
     if callback.from_user.id != ADMIN_ID:
-
         await callback.answer(
             "❌ У тебя нет доступа.",
             show_alert=True
         )
-
         return
 
     order_id = callback.data.replace("approve_", "")
 
     cursor.execute(
         """
-        SELECT user_id, stars, price, status
+        SELECT user_id, stars, price
         FROM orders
         WHERE id = ?
         """,
@@ -431,15 +464,13 @@ async def approve_order(callback: CallbackQuery):
     order = cursor.fetchone()
 
     if not order:
-
         await callback.answer(
             "❌ Заказ не найден.",
             show_alert=True
         )
-
         return
 
-    user_id, stars, price, status = order
+    user_id, stars, price = order
 
     cursor.execute(
         """
@@ -458,8 +489,22 @@ async def approve_order(callback: CallbackQuery):
         f"🧾 Заказ: <code>{order_id}</code>\n"
         f"⭐ Stars: {stars}\n"
         f"💰 Сумма: {price} грн\n\n"
-        "Заказ принят в обработку. ⭐\n"
-        "Ожидай зачисления Stars.",
+        "Заказ принят в обработку. ⭐",
+        parse_mode="HTML"
+    )
+
+    review_keyboard = InlineKeyboardBuilder()
+
+    review_keyboard.button(
+        text="⭐ Оставить отзыв",
+        callback_data=f"new_review_{order_id}"
+    )
+
+    await bot.send_message(
+        user_id,
+        "💬 <b>Спасибо за покупку!</b>\n\n"
+        "Оцени работу StarFlow Shop 👇",
+        reply_markup=review_keyboard.as_markup(),
         parse_mode="HTML"
     )
 
@@ -484,12 +529,10 @@ async def approve_order(callback: CallbackQuery):
 async def reject_order(callback: CallbackQuery):
 
     if callback.from_user.id != ADMIN_ID:
-
         await callback.answer(
             "❌ У тебя нет доступа.",
             show_alert=True
         )
-
         return
 
     order_id = callback.data.replace("reject_", "")
@@ -506,12 +549,10 @@ async def reject_order(callback: CallbackQuery):
     order = cursor.fetchone()
 
     if not order:
-
         await callback.answer(
             "❌ Заказ не найден.",
             show_alert=True
         )
-
         return
 
     user_id, stars, price = order
@@ -530,11 +571,9 @@ async def reject_order(callback: CallbackQuery):
     await bot.send_message(
         user_id,
         "❌ <b>Оплата отклонена</b>\n\n"
-        f"🧾 Заказ: <code>{order_id}</code>\n"
-        f"⭐ Stars: {stars}\n"
-        f"💰 Сумма: {price} грн\n\n"
-        "Платёж не был подтверждён.\n"
-        "Если ты уверен, что оплатил заказ, обратись в поддержку.",
+        f"🧾 Заказ: <code>{order_id}</code>\n\n"
+        "Если ты уверен, что оплатил заказ, "
+        "обратись в поддержку.",
         parse_mode="HTML"
     )
 
@@ -542,13 +581,345 @@ async def reject_order(callback: CallbackQuery):
         caption=(
             "❌ <b>ОПЛАТА ОТКЛОНЕНА</b>\n\n"
             f"🧾 Заказ: <code>{order_id}</code>\n"
-            f"⭐ Stars: {stars}\n"
-            f"💰 Сумма: {price} грн"
+            f"⭐ {stars} Stars\n"
+            f"💰 {price} грн"
         ),
         parse_mode="HTML"
     )
 
     await callback.answer("Заказ отклонён ❌")
+
+
+# =========================================================
+# ОТЗЫВЫ
+# =========================================================
+
+@dp.callback_query(F.data == "reviews")
+async def reviews(callback: CallbackQuery):
+
+    cursor.execute(
+        """
+        SELECT rating, username, text
+        FROM reviews
+        WHERE status = 'published'
+        ORDER BY id DESC
+        LIMIT 10
+        """
+    )
+
+    real_reviews = cursor.fetchall()
+
+    cursor.execute(
+        """
+        SELECT AVG(rating), COUNT(*)
+        FROM reviews
+        WHERE status = 'published'
+        """
+    )
+
+    average, count = cursor.fetchone()
+
+    keyboard = InlineKeyboardBuilder()
+
+    keyboard.button(
+        text="✍️ Оставить отзыв",
+        callback_data="new_review"
+    )
+
+    keyboard.button(
+        text="🔙 Назад",
+        callback_data="back"
+    )
+
+    keyboard.adjust(1)
+
+    text = (
+        "⭐ <b>Отзывы StarFlow Shop</b>\n\n"
+    )
+
+    if count:
+        text += (
+            f"📊 <b>Рейтинг:</b> {average:.1f}/5\n"
+            f"💬 <b>Реальных отзывов:</b> {count}\n\n"
+        )
+
+    else:
+        text += (
+            "📊 <b>Рейтинг:</b> пока формируется\n\n"
+        )
+
+    # Демонстрационные отзывы
+    text += "💬 <b>Примеры отзывов:</b>\n\n"
+
+    for username, rating, review_text in DEMO_REVIEWS:
+
+        text += (
+            f"{'⭐' * rating}\n"
+            f"👤 <b>{username}</b>\n"
+            f"💬 {review_text}\n\n"
+        )
+
+    # Реальные отзывы
+    if real_reviews:
+
+        text += "━━━━━━━━━━━━━━\n"
+        text += "⭐ <b>Отзывы покупателей:</b>\n\n"
+
+        for rating, username, review_text in real_reviews:
+
+            text += (
+                f"{'⭐' * rating}\n"
+                f"👤 <b>{username}</b>\n"
+                f"💬 {review_text}\n\n"
+            )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=keyboard.as_markup(),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+# =========================================================
+# НОВЫЙ ОТЗЫВ
+# =========================================================
+
+@dp.callback_query(F.data.startswith("new_review"))
+async def new_review(callback: CallbackQuery):
+
+    pending_reviews[callback.from_user.id] = {}
+
+    keyboard = InlineKeyboardBuilder()
+
+    for rating in range(5, 0, -1):
+
+        keyboard.button(
+            text="⭐" * rating,
+            callback_data=f"rating_{rating}"
+        )
+
+    keyboard.button(
+        text="🔙 Назад",
+        callback_data="reviews"
+    )
+
+    keyboard.adjust(1)
+
+    await callback.message.edit_text(
+        "⭐ <b>Оцени StarFlow Shop</b>\n\n"
+        "Выбери свою оценку:",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+# =========================================================
+# ВРЕМЕННЫЕ ОТЗЫВЫ
+# =========================================================
+
+pending_reviews = {}
+
+
+# =========================================================
+# ВЫБОР ОЦЕНКИ
+# =========================================================
+
+@dp.callback_query(F.data.startswith("rating_"))
+async def select_rating(callback: CallbackQuery):
+
+    rating = int(
+        callback.data.replace("rating_", "")
+    )
+
+    pending_reviews[callback.from_user.id] = {
+        "rating": rating
+    }
+
+    await callback.message.edit_text(
+        f"⭐ <b>Твоя оценка:</b> {'⭐' * rating}\n\n"
+        "Теперь напиши свой отзыв одним сообщением.",
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+# =========================================================
+# ТЕКСТ ОТЗЫВА
+# =========================================================
+
+@dp.message(F.text)
+async def review_text(message: Message):
+
+    user_id = message.from_user.id
+
+    if user_id not in pending_reviews:
+        return
+
+    review_data = pending_reviews[user_id]
+
+    if "rating" not in review_data:
+        return
+
+    rating = review_data["rating"]
+
+    review_text_value = message.text.strip()
+
+    if len(review_text_value) < 3:
+        await message.answer(
+            "❌ Напиши отзыв хотя бы из нескольких слов."
+        )
+        return
+
+    if len(review_text_value) > 500:
+        await message.answer(
+            "❌ Максимальная длина отзыва — 500 символов."
+        )
+        return
+
+    username = message.from_user.username
+
+    display_name = (
+        f"@{username}"
+        if username
+        else message.from_user.full_name
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO reviews
+        (user_id, username, rating, text, status)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            display_name,
+            rating,
+            review_text_value,
+            "pending"
+        )
+    )
+
+    db.commit()
+
+    review_id = cursor.lastrowid
+
+    del pending_reviews[user_id]
+
+    keyboard = InlineKeyboardBuilder()
+
+    keyboard.button(
+        text="✅ Опубликовать",
+        callback_data=f"publish_review_{review_id}"
+    )
+
+    keyboard.button(
+        text="❌ Отклонить",
+        callback_data=f"reject_review_{review_id}"
+    )
+
+    keyboard.adjust(1)
+
+    await bot.send_message(
+        ADMIN_ID,
+        "📝 <b>НОВЫЙ ОТЗЫВ</b>\n\n"
+        f"👤 <b>Пользователь:</b> {display_name}\n"
+        f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+        f"⭐ <b>Оценка:</b> {'⭐' * rating}\n\n"
+        f"💬 <b>Отзыв:</b>\n{review_text_value}",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="HTML"
+    )
+
+    await message.answer(
+        "✅ <b>Спасибо за отзыв!</b>\n\n"
+        "Отзыв отправлен на проверку.",
+        parse_mode="HTML"
+    )
+
+
+# =========================================================
+# ПУБЛИКАЦИЯ ОТЗЫВА
+# =========================================================
+
+@dp.callback_query(F.data.startswith("publish_review_"))
+async def publish_review(callback: CallbackQuery):
+
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "❌ Нет доступа.",
+            show_alert=True
+        )
+        return
+
+    review_id = int(
+        callback.data.replace(
+            "publish_review_",
+            ""
+        )
+    )
+
+    cursor.execute(
+        """
+        UPDATE reviews
+        SET status = ?
+        WHERE id = ?
+        """,
+        ("published", review_id)
+    )
+
+    db.commit()
+
+    await callback.message.edit_text(
+        "✅ <b>Отзыв опубликован!</b>",
+        parse_mode="HTML"
+    )
+
+    await callback.answer("Опубликовано ✅")
+
+
+# =========================================================
+# ОТКЛОНЕНИЕ ОТЗЫВА
+# =========================================================
+
+@dp.callback_query(F.data.startswith("reject_review_"))
+async def reject_review(callback: CallbackQuery):
+
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "❌ Нет доступа.",
+            show_alert=True
+        )
+        return
+
+    review_id = int(
+        callback.data.replace(
+            "reject_review_",
+            ""
+        )
+    )
+
+    cursor.execute(
+        """
+        UPDATE reviews
+        SET status = ?
+        WHERE id = ?
+        """,
+        ("rejected", review_id)
+    )
+
+    db.commit()
+
+    await callback.message.edit_text(
+        "❌ <b>Отзыв отклонён.</b>",
+        parse_mode="HTML"
+    )
+
+    await callback.answer("Отклонено ❌")
 
 
 # =========================================================
@@ -578,6 +949,14 @@ async def my_orders(callback: CallbackQuery):
         callback_data="back"
     )
 
+    statuses = {
+        "waiting_payment": "⏳ Ожидает оплаты",
+        "waiting_receipt": "📸 Ожидает чек",
+        "checking": "🔎 Проверяется",
+        "paid": "✅ Оплачено",
+        "rejected": "❌ Отклонено"
+    }
+
     if not orders:
 
         text = (
@@ -591,23 +970,10 @@ async def my_orders(callback: CallbackQuery):
 
         for order_id, stars, price, status in orders:
 
-            if status == "waiting_payment":
-                status_text = "⏳ Ожидает оплаты"
-
-            elif status == "waiting_receipt":
-                status_text = "📸 Ожидает чек"
-
-            elif status == "checking":
-                status_text = "🔎 Проверяется"
-
-            elif status == "paid":
-                status_text = "✅ Оплачено"
-
-            elif status == "rejected":
-                status_text = "❌ Отклонено"
-
-            else:
-                status_text = status
+            status_text = statuses.get(
+                status,
+                status
+            )
 
             text += (
                 f"🧾 <code>{order_id}</code>\n"
@@ -658,14 +1024,22 @@ async def support(callback: CallbackQuery):
     keyboard = InlineKeyboardBuilder()
 
     keyboard.button(
+        text="👨‍💻 Написать в поддержку",
+        url="https://t.me/Bevseev"
+    )
+
+    keyboard.button(
         text="🔙 Назад",
         callback_data="back"
     )
 
+    keyboard.adjust(1)
+
     await callback.message.edit_text(
-        "💬 <b>Поддержка</b>\n\n"
+        "💬 <b>Поддержка StarFlow Shop</b>\n\n"
         "Если возникла проблема с заказом,\n"
-        "обратись к администратору: @De2vex",
+        "напиши нашей поддержке.\n\n"
+        f"👨‍💻 {SUPPORT_USERNAME}",
         reply_markup=keyboard.as_markup(),
         parse_mode="HTML"
     )
@@ -682,7 +1056,10 @@ async def back(callback: CallbackQuery):
 
     await callback.message.edit_text(
         "⭐ <b>StarFlow Shop</b>\n\n"
-        "Добро пожаловать в магазин Telegram Stars!\n\n"
+        "Добро пожаловать в магазин Telegram Stars! 🚀\n\n"
+        "⚡ Быстрая обработка заказов\n"
+        "💳 Удобная оплата\n"
+        "⭐ Telegram Stars\n\n"
         "👇 Выбери нужный раздел:",
         reply_markup=main_menu(),
         parse_mode="HTML"
